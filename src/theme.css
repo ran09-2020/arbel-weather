@@ -1,0 +1,55 @@
+/**
+ * ⚠️ THEME CONFIGURATION — Tailwind v4
+ * Add custom theme values INSIDE the @theme { } block below.
+ * Do NOT nest @media, @layer, or other at-rules inside @theme.
+ * Do NOT create a tailwind.config.js — all theming is done here.
+ * Keep all { } braces balanced.
+ */
+@theme {
+	/* Colors */
+	--color-primary: var(--color-blue-500);
+	--color-primary-foreground: var(--color-white);
+
+	--color-secondary: var(--color-gray-500);
+	--color-secondary-foreground: var(--color-white);
+
+	--color-destructive: var(--color-red-500);
+	--color-destructive-foreground: var(--color-white);
+
+	--color-muted: var(--color-gray-100);
+	--color-muted-foreground: var(--color-gray-500);
+
+	--color-accent: var(--color-purple-500);
+	--color-accent-foreground: var(--color-white);
+
+	--color-border: var(--color-gray-200);
+	--color-input: var(--color-gray-200);
+	--color-ring: var(--color-blue-500);
+
+	/* Radius */
+	--radius-sm: 0.5rem;
+	--radius-md: 0.75rem;
+	--radius-lg: 1rem;
+	--radius-xl: 1.5rem;
+}
+
+/* Dark mode styles using CSS */
+:root {
+	--bg-page: linear-gradient(to bottom right, #f8fafc, #eff6ff, #eef2ff);
+	--bg-card: rgba(255, 255, 255, 0.6);
+	--bg-header: rgba(255, 255, 255, 0.8);
+	--text-primary: #111827;
+	--text-secondary: #4b5563;
+	--text-muted: #9ca3af;
+	--border-color: rgba(255, 255, 255, 0.8);
+}
+
+:root.dark {
+	--bg-page: linear-gradient(to bottom right, #030712, #111827, #0f172a);
+	--bg-card: rgba(0, 0, 0, 0.4);
+	--bg-header: rgba(17, 24, 39, 0.9);
+	--text-primary: #ffffff;
+	--text-secondary: #d1d5db;
+	--text-muted: #6b7280;
+	--border-color: rgba(255, 255, 255, 0.1);
+}
