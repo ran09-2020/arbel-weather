@@ -210,6 +210,7 @@ function viteCustomErrorOverlay(): Plugin {
 // https://vite.dev/config/
 export default defineConfig(() => {
 	return {
+		base: '/arbel-weather/',
 		customLogger: {
 			...defaultLogger,
 			info(msg: string) {
