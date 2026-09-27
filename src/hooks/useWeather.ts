@@ -15,7 +15,7 @@ function validateValue(value: number | null, max: number): number | null {
 async function saveWeatherToHistory(weather: WeatherObservation) {
   if (!supabase) return;
 
-  const record: TablesInsert<'weather_history'> = {
+  const record: TablesInsert<'arbel_weather_history'> = {
     recorded_at: weather.obsTimeUtc || new Date().toISOString(),
     temperature: validateValue(weather.metric?.temp ?? null, 70), // Max 70°C
     feels_like: validateValue(weather.metric?.heatIndex ?? null, 70),
@@ -31,7 +31,7 @@ async function saveWeatherToHistory(weather: WeatherObservation) {
   };
 
   try {
-    await supabase.from('weather_history').insert(record);
+    await supabase.from('arbel_weather_history').insert(record);
   } catch (err) {
     console.error('Failed to save weather history:', err);
   }

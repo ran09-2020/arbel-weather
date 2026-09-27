@@ -4,7 +4,7 @@ import type { Tables, TablesInsert } from '@/integrations/supabase/helpers';
 import type { WeatherObservation, HistoricalObservation } from '@/services/weatherService';
 import { fetchHistoricalRange } from '@/services/weatherService';
 
-export type WeatherHistoryRecord = Tables<'weather_history'>;
+export type WeatherHistoryRecord = Tables<'arbel_weather_history'>;
 
 // Clean up any corrupted data (like timestamps stored in wrong fields)
 function sanitizeRecord(record: WeatherHistoryRecord): WeatherHistoryRecord {
@@ -57,7 +57,7 @@ export function useWeatherHistory() {
       const limit = hours <= 24 ? 1500 : hours <= 168 ? 10000 : 50000;
 
       const { data, error: fetchError } = await supabase
-        .from('weather_history')
+        .from('arbel_weather_history')
         .select('*')
         .gte('recorded_at', since.toISOString())
         .order('recorded_at', { ascending: true })
@@ -81,7 +81,7 @@ export function useWeatherHistory() {
   const saveWeatherData = useCallback(async (weather: WeatherObservation) => {
     if (!supabase) return;
 
-    const record: TablesInsert<'weather_history'> = {
+    const record: TablesInsert<'arbel_weather_history'> = {
       recorded_at: weather.obsTimeUtc || new Date().toISOString(),
       temperature: weather.metric?.temp ?? null,
       feels_like: weather.metric?.heatIndex ?? null,
@@ -98,7 +98,7 @@ export function useWeatherHistory() {
 
     try {
       const { error: insertError } = await supabase
-        .from('weather_history')
+        .from('arbel_weather_history')
         .insert(record);
 
       if (insertError) {
@@ -129,7 +129,7 @@ export function useWeatherHistory() {
       let imported = 0;
       for (const obs of results) {
         // Create a record for each day's summary (at end of day)
-        const record: TablesInsert<'weather_history'> = {
+        const record: TablesInsert<'arbel_weather_history'> = {
           recorded_at: obs.obsTimeUtc || new Date(obs.epoch * 1000).toISOString(),
           temperature: obs.metric?.tempAvg ?? null,
           feels_like: obs.metric?.heatindexAvg ?? null,
@@ -146,7 +146,7 @@ export function useWeatherHistory() {
 
         try {
           const { error: insertError } = await supabase
-            .from('weather_history')
+            .from('arbel_weather_history')
             .upsert(record, { onConflict: 'recorded_at' });
 
           if (!insertError) {

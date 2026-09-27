@@ -14,7 +14,7 @@ export type Database = {
   }
   public: {
     Tables: {
-      weather_history: {
+      arbel_weather_history: {
         Row: {
           created_at: string
           dew_point: number | null

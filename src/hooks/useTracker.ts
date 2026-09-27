@@ -33,24 +33,35 @@ export function useTracker() {
       
       const visitorId = getVisitorId();
       const userAgent = navigator.userAgent;
-      const path = location.pathname;
+      let path = location.pathname;
+      
+      // Do not track admin pages
+      if (path.startsWith('/admin')) {
+        return;
+      }
+      
+      if (localStorage.getItem('arbel_admin') === 'true') {
+        path = '[מנהל] ' + path;
+      }
       
       // Fetch geolocation info
       let country = 'Unknown';
       let region = 'Unknown';
       try {
-        const geoResponse = await fetch('http://ip-api.com/json/');
+        const geoResponse = await fetch('https://ipwho.is/');
         if (geoResponse.ok) {
           const geoData = await geoResponse.json();
           country = geoData.country || 'Unknown';
-          region = geoData.regionName || geoData.city || 'Unknown';
+          region = geoData.region || 'Unknown';
+          sessionStorage.setItem('arbel_country', country);
+          sessionStorage.setItem('arbel_region', region);
         }
       } catch (err) {
         console.warn('Could not fetch geolocation', err);
       }
       
       try {
-        await supabase.from('page_views').insert([
+        await supabase.from('arbel_weather_page_views').insert([
           {
             visitor_id: visitorId,
             path: path,
@@ -67,4 +78,44 @@ export function useTracker() {
     // Use setTimeout to not block main thread on navigation
     setTimeout(trackPageLoad, 100);
   }, [location.pathname]);
+
+  // Track outbound clicks
+  useEffect(() => {
+    const handleGlobalClick = async (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest('a');
+      if (!target || !target.href) return;
+      
+      const href = target.href;
+      if (href.includes('learn-about-weather.sticklight.app') || href.includes('atlas.sticklight.app')) {
+        const visitorId = getVisitorId();
+        const country = sessionStorage.getItem('arbel_country') || 'Unknown';
+        const region = sessionStorage.getItem('arbel_region') || 'Unknown';
+        
+        let linkName = '[קישור חיצוני]';
+        if (href.includes('learn-about-weather')) linkName = '[אנציקלופדיה]';
+        if (href.includes('atlas')) linkName = '[אטלס]';
+
+        if (localStorage.getItem('arbel_admin') === 'true') {
+          linkName = '[מנהל] ' + linkName;
+        }
+
+        try {
+          await supabase.from('arbel_weather_page_views').insert([
+            {
+              visitor_id: visitorId,
+              path: linkName,
+              user_agent: navigator.userAgent,
+              country: country,
+              region: region
+            }
+          ]);
+        } catch (error) {
+          console.error('Failed to track outbound click', error);
+        }
+      }
+    };
+
+    document.addEventListener('click', handleGlobalClick);
+    return () => document.removeEventListener('click', handleGlobalClick);
+  }, []);
 }
