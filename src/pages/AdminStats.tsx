@@ -60,7 +60,10 @@ export default function AdminStats() {
   }
 
   // Analytics Logic
-  const filteredViews = views.filter(v => activeTab === 'admin' ? v.path.startsWith('[מנהל]') : !v.path.startsWith('[מנהל]'));
+  const filteredViews = views.filter(v =>
+    v.path !== '[תיקון גשם]' &&
+    (activeTab === 'admin' ? v.path.startsWith('[מנהל]') : !v.path.startsWith('[מנהל]'))
+  );
 
   const totalViews = filteredViews.length;
   const uniqueVisitors = new Set(filteredViews.map(v => v.visitor_id)).size;

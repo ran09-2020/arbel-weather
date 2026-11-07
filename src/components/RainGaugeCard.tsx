@@ -1,8 +1,14 @@
-import { CloudRain } from 'lucide-react';
+import { useState } from 'react';
+import { CloudRain, Edit2, X, Check, RotateCcw, Lock } from 'lucide-react';
 import { InfoTooltip } from './InfoTooltip';
+import { saveRainOverride, clearRainOverride, getTodayDateKey } from '@/services/weatherService';
 
 interface RainGaugeCardProps {
   totalToday: number;
+  rawWuToday?: number | null;
+  isOverridden?: boolean;
+  obsDate?: string;
+  onRainUpdated?: () => void;
   isDark?: boolean;
 }
 
@@ -25,9 +31,71 @@ function getScaleConfig(value: number): {max: number;marks: number[];} {
   return { max: 200, marks: [0, 50, 100, 150, 200] };
 }
 
-export function RainGaugeCard({ totalToday, isDark = false }: RainGaugeCardProps) {
+export function RainGaugeCard({
+  totalToday,
+  rawWuToday,
+  isOverridden = false,
+  obsDate,
+  onRainUpdated,
+  isDark = false
+}: RainGaugeCardProps) {
   const { max: dynamicMax, marks: scaleMarks } = getScaleConfig(totalToday);
   const totalPercentage = Math.min(100, totalToday / dynamicMax * 100);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem('arbel_admin') === 'true');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState(false);
+  const [rainInput, setRainInput] = useState(totalToday.toFixed(1));
+  const [saving, setSaving] = useState(false);
+
+  const handleOpenEdit = () => {
+    setIsAdmin(localStorage.getItem('arbel_admin') === 'true');
+    setRainInput(totalToday.toFixed(1));
+    setPasswordError(false);
+    setIsEditing(true);
+  };
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === 'arbeladmin') {
+      localStorage.setItem('arbel_admin', 'true');
+      setIsAdmin(true);
+      setPasswordError(false);
+      setPasswordInput('');
+    } else {
+      setPasswordError(true);
+    }
+  };
+
+  const activeDateKey = obsDate ? obsDate.substring(0, 10) : getTodayDateKey();
+
+  const handleSaveOverride = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(rainInput);
+    if (isNaN(parsed) || parsed < 0) return;
+
+    setSaving(true);
+    try {
+      const wuBase = rawWuToday !== null && rawWuToday !== undefined ? rawWuToday : totalToday;
+      await saveRainOverride(activeDateKey, parsed, wuBase);
+      setIsEditing(false);
+      onRainUpdated?.();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResetOverride = async () => {
+    setSaving(true);
+    try {
+      await clearRainOverride(activeDateKey);
+      setIsEditing(false);
+      onRainUpdated?.();
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div data-ev-id="ev_1bc2c129ac" className="relative overflow-hidden rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 bg-slate-800/90 backdrop-blur-xl border border-violet-400/30">
@@ -41,8 +109,106 @@ export function RainGaugeCard({ totalToday, isDark = false }: RainGaugeCardProps
             </div>
             <span data-ev-id="ev_ca94199b66" className="text-white/80 text-sm font-medium">סה״כ משקעים</span>
           </div>
-          <InfoTooltip title="סה״כ משקעים" content={TOTAL_RAIN_INFO} />
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleOpenEdit}
+              title="תיקון כמות גשם (מנהל)"
+              className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+            </button>
+            <InfoTooltip title="סה״כ משקעים" content={TOTAL_RAIN_INFO} />
+          </div>
         </div>
+
+        {/* Admin Edit Overlay */}
+        {isEditing && (
+          <div className="mb-4 p-3 rounded-xl bg-slate-900/95 border border-violet-400/40 text-white text-sm" dir="rtl">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-violet-300 flex items-center gap-1.5">
+                {isAdmin ? <Edit2 className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                {isAdmin ? 'תיקון כמות גשם להיום' : 'כניסת מנהל'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="p-1 rounded hover:bg-white/10 text-white/60 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {!isAdmin ? (
+              <form onSubmit={handlePasswordSubmit} className="space-y-2">
+                <input
+                  type="password"
+                  placeholder="סיסמת מנהל"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:border-violet-400"
+                  autoFocus
+                />
+                {passwordError && (
+                  <p className="text-xs text-red-400">סיסמה שגויה</p>
+                )}
+                <button
+                  type="submit"
+                  className="w-full py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 font-bold text-white transition-colors"
+                >
+                  אישור
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleSaveOverride} className="space-y-2.5">
+                <div className="flex justify-between text-xs text-white/70 bg-white/5 px-2.5 py-1.5 rounded-lg">
+                  <span>נתון WU כרגע: <strong dir="ltr">{(rawWuToday ?? totalToday).toFixed(1)}</strong> מ״מ</span>
+                  <span>מוצג: <strong dir="ltr">{totalToday.toFixed(1)}</strong> מ״מ</span>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/80 mb-1">
+                    כמות הגשם הנכונה כרגע (מ״מ):
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    dir="ltr"
+                    value={rainInput}
+                    onChange={(e) => setRainInput(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-white/10 border border-white/20 text-white font-bold text-center focus:outline-none focus:border-violet-400"
+                    autoFocus
+                  />
+                  <p className="text-[11px] text-white/50 mt-1">
+                    הגשם שיירד ב-WU מעתה ימשיך להצטבר מעל הערך שתשמור.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 font-bold text-white flex items-center justify-center gap-1 transition-colors"
+                  >
+                    <Check className="w-4 h-4" />
+                    {saving ? 'שומר...' : 'שמור'}
+                  </button>
+                  {isOverridden && (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={handleResetOverride}
+                      className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-red-500/30 text-white/80 hover:text-red-200 text-xs flex items-center gap-1 transition-colors"
+                      title="חזרה לנתון המקורי מ-WU"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      איפוס ל-WU
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+          </div>
+        )}
         
         <div data-ev-id="ev_d7b535cf0b" className="flex items-center gap-6">
           {/* Rain Gauge Tube */}
@@ -54,23 +220,24 @@ export function RainGaugeCard({ totalToday, isDark = false }: RainGaugeCardProps
                 {scaleMarks.map((mark) => {
                   const pos = mark / dynamicMax * 100;
                   return (
-                    <div data-ev-id="ev_4f8bdf5416"
+                    <div
                     key={mark}
-                    className="absolute left-0 right-0 flex items-center"
+                    className="absolute left-0 right-0 flex items-center h-0"
                     style={{ bottom: `${pos}%` }}>
-
-                      <div data-ev-id="ev_9977f15c6d" className="w-3 h-px bg-white/50" />
-                      <span data-ev-id="ev_266b330ce0" className="text-[9px] text-white/60 mr-0.5 font-medium">{mark}</span>
-                    </div>);
-
+                      <div className={`w-3 h-px bg-white/50 ${pos === 0 || pos === 100 ? 'invisible' : ''}`} />
+                      <span className="text-[9px] text-white/60 mr-0.5 font-medium" style={{
+                        transform: pos === 0 ? 'translateY(-6px)' : pos === 100 ? 'translateY(6px)' : 'none'
+                      }}>{mark}</span>
+                    </div>
+                  );
                 })}
                 
                 {/* Current value indicator line */}
                 {totalToday > 0 &&
-                <div data-ev-id="ev_eed010a485"
-                className="absolute left-0 right-0 flex items-center z-20"
-                style={{ bottom: `${totalPercentage}%` }}>
-                    <div data-ev-id="ev_596a4ed9d7" className="w-full h-0.5 bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.8)]" />
+                  <div
+                  className="absolute left-0 right-0 flex items-center h-0 z-20"
+                  style={{ bottom: `${totalPercentage}%` }}>
+                    <div className="w-full h-0.5 bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.8)]" />
                   </div>
                 }
                 

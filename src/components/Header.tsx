@@ -1,4 +1,4 @@
-import { BarChart3, CloudSun, Map, BookOpen, Cloud, LineChart } from 'lucide-react';
+import { BarChart3, CloudSun, Map, BookOpen, Cloud, LineChart, Archive } from 'lucide-react';
 import { Link } from 'react-router';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Theme } from '@/contexts/ThemeContext';
@@ -134,6 +134,22 @@ export function Header({ theme, onToggleTheme, isDark }: HeaderProps) {
                 'text-gray-600 group-hover:text-gray-800'}`
                 } />
               <span data-ev-id="ev_5a558ef3a7" className={`text-[8px] sm:text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>גרפים</span>
+            </Link>
+            <Link
+              to="/tal-history"
+              className={`flex flex-col items-center gap-0.5 p-1 sm:p-2 rounded-lg sm:rounded-xl transition-all duration-200 group ${
+              isDark ?
+              'bg-[#128C7E]/20 hover:bg-[#128C7E]/40' :
+              'bg-[#25D366]/20 hover:bg-[#25D366]/40'}`
+              }
+              title="היומן של טל">
+              <Archive
+                className={`w-3.5 h-3.5 sm:w-5 sm:h-5 transition-colors ${
+                isDark ?
+                'text-[#00a884] group-hover:text-green-400' :
+                'text-[#128C7E] group-hover:text-green-700'}`
+                } />
+              <span className={`text-[8px] sm:text-[10px] ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>היומן של טל</span>
             </Link>
             <ThemeToggle theme={theme} onToggle={onToggleTheme} isDark={isDark} />
           </div>

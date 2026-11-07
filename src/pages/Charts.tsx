@@ -41,9 +41,9 @@ function formatDateLabel(dateStr: string, range: TimeRange): string {
   return date.toLocaleDateString('he-IL', { month: 'short' });
 }
 
-function ChartCard({ title, icon, children }: {title: string;icon: React.ReactNode;children: React.ReactNode;}) {
+function ChartCard({ title, icon, isTal, children }: {title: string;icon: React.ReactNode;isTal?: boolean;children: React.ReactNode;}) {
   return (
-    <div data-ev-id="ev_cde0a88b89" className="w-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-none sm:rounded-2xl p-2 sm:p-4 shadow-none sm:shadow-lg border-0 sm:border border-white/20 dark:border-slate-700/50">
+    <div data-ev-id="ev_cde0a88b89" className="w-full backdrop-blur-sm rounded-none sm:rounded-2xl p-2 sm:p-4 shadow-none sm:shadow-lg border-0 sm:border bg-white/80 dark:bg-slate-800/80 border-white/20 dark:border-slate-700/50">
       <div data-ev-id="ev_718f3ee6a5" className="flex items-center gap-2 mb-3 sm:mb-4">
         {icon}
         <h3 data-ev-id="ev_0cf3fd60f3" className="text-base sm:text-lg font-semibold text-slate-800 dark:text-white">{title}</h3>
@@ -61,11 +61,19 @@ function CustomTooltip({ active, payload, label }: any) {
   return (
     <div data-ev-id="ev_91f189d8f6" className="bg-white dark:bg-slate-800 p-3 rounded-lg shadow-lg border border-slate-200 dark:border-slate-600 text-right">
       <p data-ev-id="ev_fc7e5d4355" className="font-medium text-slate-800 dark:text-white mb-2">{label}</p>
-      {payload.map((entry: any, index: number) =>
-      <p data-ev-id="ev_2a3e772ccf" key={index} style={{ color: entry.color }} className="text-sm">
-          {entry.name}: {entry.value !== null ? `${entry.value.toFixed(1)}${entry.unit || ''}` : 'אין נתונים'}
-        </p>
-      )}
+      {payload.map((entry: any, index: number) => {
+        const isGradient = entry.color?.includes('url');
+        return (
+          <p 
+            data-ev-id="ev_2a3e772ccf" 
+            key={index} 
+            style={isGradient ? undefined : { color: entry.color }} 
+            className={`text-sm font-medium ${isGradient ? 'text-sky-600 dark:text-sky-300' : ''}`}
+          >
+            {entry.name}: {entry.value !== null ? `${entry.value.toFixed(1)}${entry.unit || ''}` : 'אין נתונים'}
+          </p>
+        );
+      })}
     </div>);
 
 }
@@ -165,22 +173,43 @@ export default function Charts() {
     loadData();
   }, [timeRange, selectedDate, selectedMonth, selectedYear]);
 
+  // Adjust selected date if needed
+
   const chartData: ChartDataPoint[] = useMemo(() => {
+
     if (timeRange === 'daily' && detailedData.length > 0) {
       // Map detailed observations for hourly chart
-      return detailedData.map((obs) => ({
-        date: obs.obsTimeLocal,
-        label: formatDateLabel(obs.obsTimeLocal, timeRange),
-        tempHigh: obs.metric?.tempHigh ?? obs.metric?.tempAvg ?? null,
-        tempLow: obs.metric?.tempLow ?? obs.metric?.tempAvg ?? null,
-        tempAvg: obs.metric?.tempAvg ?? null,
-        humidity: obs.humidityAvg ?? null,
-        windSpeed: obs.metric?.windspeedAvg ?? null,
-        windGust: obs.metric?.windgustHigh ?? null,
-        precip: obs.metric?.precipTotal ?? null,
-        pressure: obs.metric?.pressureMax ?? null,
-        uv: obs.uvHigh ?? null
-      })).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+      // Sort data first so delta calculation is chronological
+      const sortedDetailed = [...detailedData].sort((a, b) => new Date(a.obsTimeLocal).getTime() - new Date(b.obsTimeLocal).getTime());
+      
+      let prevPrecipTotal = 0;
+      
+      return sortedDetailed.map((obs) => {
+        const currentTotal = obs.metric?.precipTotal ?? 0;
+        let incremental = null;
+        if (currentTotal > 0) {
+           incremental = Math.max(0, currentTotal - prevPrecipTotal);
+        }
+        // Only update prevPrecipTotal if current is valid
+        if (obs.metric?.precipTotal !== undefined && obs.metric?.precipTotal !== null) {
+           prevPrecipTotal = currentTotal;
+        }
+
+        return {
+          date: obs.obsTimeLocal,
+          label: formatDateLabel(obs.obsTimeLocal, timeRange),
+          tempHigh: obs.metric?.tempHigh ?? obs.metric?.tempAvg ?? null,
+          tempLow: obs.metric?.tempLow ?? obs.metric?.tempAvg ?? null,
+          tempAvg: obs.metric?.tempAvg ?? null,
+          humidity: obs.humidityAvg ?? null,
+          windSpeed: obs.metric?.windspeedAvg ?? null,
+          windGust: obs.metric?.windgustHigh ?? null,
+          precip: incremental,
+          pressure: obs.metric?.pressureMax ?? null,
+          uv: obs.uvHigh ?? null
+        };
+      });
     }
 
     // Map historical observations for daily/weekly/monthly/yearly charts
@@ -279,7 +308,7 @@ export default function Charts() {
   };
 
   return (
-    <div data-ev-id="ev_b035004c17" className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900" dir="rtl">
+    <div data-ev-id="ev_b035004c17" className="min-h-screen transition-colors duration-500 bg-gradient-to-br from-sky-100 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900" dir="rtl">
       {/* Header */}
       <header data-ev-id="ev_b6e6ab7b47" className="sticky top-0 z-50 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border-b border-white/20 dark:border-slate-700/50">
         <div data-ev-id="ev_2ee328b358" className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -287,19 +316,21 @@ export default function Charts() {
             <Link
               to="/"
               className="p-2 rounded-full bg-sky-100 dark:bg-slate-700 text-sky-600 dark:text-sky-400 hover:bg-sky-200 dark:hover:bg-slate-600 transition-colors">
-
               <ArrowRight className="w-5 h-5" />
             </Link>
-            <h1 data-ev-id="ev_4cb981a2a7" className="text-xl font-bold text-slate-800 dark:text-white">גרפים - תחנת ריחן</h1>
+            <h1 data-ev-id="ev_4cb981a2a7" className="text-xl font-bold text-slate-800 dark:text-white">
+              גרפים - תחנת ריחן
+            </h1>
           </div>
 
-          <button data-ev-id="ev_d16c395b71"
-          onClick={loadData}
-          disabled={loading}
-          className="p-2 rounded-full bg-sky-100 dark:bg-slate-700 text-sky-600 dark:text-sky-400 hover:bg-sky-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50">
-
-            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex gap-2">
+            <button data-ev-id="ev_d16c395b71"
+              onClick={loadData}
+              disabled={loading}
+              className="p-2 rounded-full bg-sky-100 dark:bg-slate-700 text-sky-600 dark:text-sky-400 hover:bg-sky-200 dark:hover:bg-slate-600 transition-colors disabled:opacity-50">
+              <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -404,7 +435,6 @@ export default function Charts() {
             </button>
           </div>
 
-          {/* Selection display */}
           <p data-ev-id="ev_bb412b947d" className="text-sm text-slate-600 dark:text-slate-400">
             {getSelectionDisplay()}
           </p>

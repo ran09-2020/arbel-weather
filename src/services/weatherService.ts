@@ -1,4 +1,222 @@
 // Weather Underground PWS API Service
+import { supabase } from '@/integrations/supabase/client';
+
+export interface RainOverrideEntry {
+  date: string; // YYYY-MM-DD
+  targetRain: number;
+  wuBaseline: number;
+  delta: number;
+  active: boolean;
+  updatedAt: string;
+}
+
+const RAIN_OVERRIDE_PATH = '[תיקון גשם]';
+const RAIN_OVERRIDE_UUID = '00000000-0000-0000-0000-000000000000';
+const LOCAL_OVERRIDES_KEY = 'arbel_rain_overrides_v1';
+let cachedOverrides: Record<string, RainOverrideEntry> | null = null;
+let lastOverridesFetch = 0;
+
+export function getTodayDateKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function normalizeDateKey(dateStr: string): string {
+  const clean = dateStr.trim();
+  if (/^\d{8}$/.test(clean)) {
+    return `${clean.substring(0, 4)}-${clean.substring(4, 6)}-${clean.substring(6, 8)}`;
+  }
+  return clean.substring(0, 10);
+}
+
+function getLocalOverrides(): Record<string, RainOverrideEntry> {
+  try {
+    const raw = localStorage.getItem(LOCAL_OVERRIDES_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function setLocalOverrides(map: Record<string, RainOverrideEntry>) {
+  try {
+    localStorage.setItem(LOCAL_OVERRIDES_KEY, JSON.stringify(map));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export async function fetchRainOverrides(forceRefresh = false): Promise<Record<string, RainOverrideEntry>> {
+  const now = Date.now();
+  if (!forceRefresh && cachedOverrides && now - lastOverridesFetch < 5_000) {
+    return cachedOverrides;
+  }
+
+  const localMap = getLocalOverrides();
+  const map: Record<string, RainOverrideEntry> = { ...localMap };
+
+  if (supabase) {
+    try {
+      const { data, error } = await (supabase as any)
+        .from('arbel_weather_page_views')
+        .select('*')
+        .eq('path', RAIN_OVERRIDE_PATH)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (error) {
+        console.warn('Supabase rain override query error:', error);
+      } else if (Array.isArray(data)) {
+        const remoteMap: Record<string, RainOverrideEntry> = {};
+        const seenDates = new Set<string>();
+        for (const row of data) {
+          try {
+            const parsed = JSON.parse(row.user_agent);
+            const dateKey = parsed.date || row.region;
+            if (!dateKey || seenDates.has(dateKey)) continue;
+            seenDates.add(dateKey);
+            remoteMap[dateKey] = {
+              date: dateKey,
+              targetRain: Number(parsed.targetRain ?? 0),
+              wuBaseline: Number(parsed.wuBaseline ?? 0),
+              delta: Number(parsed.delta ?? 0),
+              active: Boolean(parsed.active),
+              updatedAt: row.created_at || parsed.updatedAt || new Date().toISOString(),
+            };
+          } catch {
+            // ignore malformed row
+          }
+        }
+
+        // Auto-sync any local override that wasn't uploaded to Supabase yet
+        for (const [dateKey, localEntry] of Object.entries(localMap)) {
+          if (localEntry && localEntry.active && !remoteMap[dateKey]) {
+            remoteMap[dateKey] = localEntry;
+            (supabase as any)
+              .from('arbel_weather_page_views')
+              .insert([
+                {
+                  visitor_id: RAIN_OVERRIDE_UUID,
+                  path: RAIN_OVERRIDE_PATH,
+                  user_agent: JSON.stringify(localEntry),
+                  country: 'Admin',
+                  region: dateKey,
+                },
+              ])
+              .then(() => {});
+          }
+        }
+
+        Object.assign(map, remoteMap);
+        setLocalOverrides(map);
+      }
+    } catch (err) {
+      console.warn('Could not fetch rain overrides from Supabase, using local cache:', err);
+    }
+  }
+
+  cachedOverrides = map;
+  lastOverridesFetch = now;
+  return map;
+}
+
+export async function saveRainOverride(dateStr: string, targetRain: number, wuBaseline: number): Promise<RainOverrideEntry> {
+  const dateKey = normalizeDateKey(dateStr);
+  const cleanTarget = Math.max(0, Number(targetRain));
+  const cleanBaseline = Math.max(0, Number(wuBaseline));
+  const delta = cleanTarget - cleanBaseline;
+
+  const entry: RainOverrideEntry = {
+    date: dateKey,
+    targetRain: cleanTarget,
+    wuBaseline: cleanBaseline,
+    delta,
+    active: true,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const current = getLocalOverrides();
+  current[dateKey] = entry;
+  setLocalOverrides(current);
+  cachedOverrides = current;
+  lastOverridesFetch = Date.now();
+
+  if (supabase) {
+    try {
+      const { error } = await (supabase as any).from('arbel_weather_page_views').insert([
+        {
+          visitor_id: RAIN_OVERRIDE_UUID,
+          path: RAIN_OVERRIDE_PATH,
+          user_agent: JSON.stringify(entry),
+          country: 'Admin',
+          region: dateKey,
+        },
+      ]);
+      if (error) {
+        console.error('Supabase insert rain override error:', error);
+      }
+    } catch (err) {
+      console.error('Failed to save rain override to Supabase:', err);
+    }
+  }
+
+  return entry;
+}
+
+export async function clearRainOverride(dateStr: string): Promise<void> {
+  const dateKey = normalizeDateKey(dateStr);
+  const entry: RainOverrideEntry = {
+    date: dateKey,
+    targetRain: 0,
+    wuBaseline: 0,
+    delta: 0,
+    active: false,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const current = getLocalOverrides();
+  current[dateKey] = entry;
+  setLocalOverrides(current);
+  cachedOverrides = current;
+  lastOverridesFetch = Date.now();
+
+  if (supabase) {
+    try {
+      const { error } = await (supabase as any).from('arbel_weather_page_views').insert([
+        {
+          visitor_id: RAIN_OVERRIDE_UUID,
+          path: RAIN_OVERRIDE_PATH,
+          user_agent: JSON.stringify(entry),
+          country: 'Admin',
+          region: dateKey,
+        },
+      ]);
+      if (error) {
+        console.error('Supabase clear rain override error:', error);
+      }
+    } catch (err) {
+      console.error('Failed to clear rain override in Supabase:', err);
+    }
+  }
+}
+
+export function calculateAdjustedRain(wuPrecip: number | null | undefined, override?: RainOverrideEntry): number {
+  const raw = Math.max(0, wuPrecip ?? 0);
+  if (!override || !override.active) {
+    return raw;
+  }
+
+  // Upward correction: if WU reset to 0 after baseline was recorded, preserve targetRain + new wuPrecip
+  if (override.delta >= 0) {
+    if (raw >= override.wuBaseline) {
+      return Number((override.targetRain + (raw - override.wuBaseline)).toFixed(2));
+    }
+    return Number((override.targetRain + raw).toFixed(2));
+  }
+
+  // Downward correction: subtract false WU reading while allowing subsequent accumulation
+  return Number(Math.max(0, raw + override.delta).toFixed(2));
+}
 
 export interface WeatherObservation {
   stationID: string;
@@ -27,6 +245,8 @@ export interface WeatherObservation {
     pressure: number | null;
     precipRate: number | null;
     precipTotal: number | null;
+    rawPrecipTotal?: number | null;
+    isRainOverridden?: boolean;
     elev: number | null;
   };
 }
@@ -307,7 +527,10 @@ async function fetchWithProxy(endpoint: 'current' | 'history/daily' | 'history/a
 
 export async function fetchWeatherData(): Promise<WeatherObservation | null> {
   try {
-    const response = await fetchWithProxy('current');
+    const [response, overrides] = await Promise.all([
+      fetchWithProxy('current'),
+      fetchRainOverrides(true)
+    ]);
     
     if (!response || !response.ok) {
       throw new Error(`Weather API error: ${response?.status || 'no response'}`);
@@ -316,7 +539,18 @@ export async function fetchWeatherData(): Promise<WeatherObservation | null> {
     const data = await safeJsonParse<WeatherResponse>(response);
     
     if (data?.observations && data.observations.length > 0) {
-      return data.observations[0];
+      const obs = data.observations[0];
+      const dateKey = obs.obsTimeLocal ? obs.obsTimeLocal.substring(0, 10) : getTodayDateKey();
+      const override = overrides[dateKey];
+      const rawPrecip = obs.metric?.precipTotal ?? 0;
+
+      if (obs.metric) {
+        obs.metric.rawPrecipTotal = rawPrecip;
+        obs.metric.isRainOverridden = Boolean(override?.active);
+        obs.metric.precipTotal = calculateAdjustedRain(rawPrecip, override);
+      }
+
+      return obs;
     }
     
     return null;
@@ -615,18 +849,25 @@ export async function fetchHistoricalData(date: string): Promise<HistoricalObser
       return result;
     }
     
-    // For past days, fetch both APIs in parallel
-    const [dailyResponse, detailedResponse] = await Promise.all([
+    // For past days, fetch both APIs and rain overrides in parallel
+    const [dailyResponse, detailedResponse, overrides] = await Promise.all([
       fetchWithProxy('history/daily', date),
-      fetchWithProxy('history/all', date).catch(() => null)
+      fetchWithProxy('history/all', date).catch(() => null),
+      fetchRainOverrides()
     ]);
+    const dateKey = normalizeDateKey(date);
+    const override = overrides[dateKey];
     
     if (!dailyResponse.ok) {
       // If daily API fails, try to use detailed API to calculate summary
       if (detailedResponse && detailedResponse.ok) {
         const detailedData = await safeJsonParse<DetailedHistoryResponse>(detailedResponse);
         if (detailedData) {
-          return calculateSummaryFromDetailed(detailedData.observations, date);
+          const calc = calculateSummaryFromDetailed(detailedData.observations, date);
+          if (calc && override?.active) {
+            calc.metric.precipTotal = calculateAdjustedRain(calc.metric.precipTotal, override);
+          }
+          return calc;
         }
       }
       throw new Error(`Weather History API error: ${dailyResponse.status}`);
@@ -639,7 +880,11 @@ export async function fetchHistoricalData(date: string): Promise<HistoricalObser
       if (detailedResponse && detailedResponse.ok) {
         const detailedData = await safeJsonParse<DetailedHistoryResponse>(detailedResponse);
         if (detailedData) {
-          return calculateSummaryFromDetailed(detailedData.observations, date);
+          const calc = calculateSummaryFromDetailed(detailedData.observations, date);
+          if (calc && override?.active) {
+            calc.metric.precipTotal = calculateAdjustedRain(calc.metric.precipTotal, override);
+          }
+          return calc;
         }
       }
       return null;
@@ -694,6 +939,10 @@ export async function fetchHistoricalData(date: string): Promise<HistoricalObser
       } catch (parseError) {
         // Silently fail - use daily data if detailed parsing fails
       }
+    }
+
+    if (override?.active) {
+      obs.metric.precipTotal = calculateAdjustedRain(obs.metric.precipTotal, override);
     }
     
     return obs;

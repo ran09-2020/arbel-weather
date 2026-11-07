@@ -86,7 +86,13 @@ export default function Index() {
 
 
           {/* Rain Gauge - Total precipitation */}
-          <RainGaugeCard totalToday={metric?.precipTotal ?? 0} isDark={isDark} />
+          <RainGaugeCard
+            totalToday={metric?.precipTotal ?? 0}
+            rawWuToday={metric?.rawPrecipTotal}
+            isOverridden={metric?.isRainOverridden}
+            obsDate={weather?.obsTimeLocal}
+            onRainUpdated={refresh}
+            isDark={isDark} />
 
           {/* Rain Intensity - Current rate with bar chart */}
           <RainIntensityCard currentRate={metric?.precipRate ?? 0} isDark={isDark} />

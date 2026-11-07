@@ -14,6 +14,7 @@ import Resources from '@/pages/Resources';
 import Encyclopedia from '@/pages/Encyclopedia';
 import Charts from '@/pages/Charts';
 import AdminStats from '@/pages/AdminStats';
+import TalHistory from '@/pages/TalHistory';
 
 export default function App() {
 	useTracker();
@@ -26,6 +27,7 @@ export default function App() {
 			<Route path="/encyclopedia" element={<Encyclopedia />} />
 			<Route path="/charts" element={<Charts />} />
 			<Route path="/admin/stats" element={<AdminStats />} />
+			<Route path="/tal-history" element={<TalHistory />} />
 		</Routes>
 	);
 }
